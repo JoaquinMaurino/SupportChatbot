@@ -1,0 +1,66 @@
+﻿Documento de Proyecto: Chatbot de Soporte Técnico con RAG (100% Local)
+1. Resumen Ejecutivo
+Desarrollo de una Prueba de Concepto (PoC) de un asistente virtual para equipos de SRE/DevOps. El sistema analizará logs de errores productivos, clasificará su severidad y utilizará RAG (Retrieval-Augmented Generation) para sugerir soluciones basadas en incidencias históricas. Prioridad: Privacidad de datos (ejecución 100% local) y coste cero.
+2. Stack Tecnológico (Local & Open Source)
+* Motor de IA (LLM): Ollama (ejecutando Llama 3.2 o Mistral).
+   * Función: Cerebro del chatbot. Se instala en tu PC y expone una API local.
+* Orquestación: LangChain (Python).
+   * Función: Conecta tus datos con el modelo de Ollama.
+* Embeddings: HuggingFace (all-MiniLM-L6-v2).
+   * Función: Convierte texto a vectores localmente. Es muy ligero y rápido.
+* Base de Datos Vectorial: ChromaDB.
+   * Función: Almacena los vectores de conocimiento en una carpeta local de tu proyecto.
+* Interfaz de Usuario: Streamlit.
+   * Función: Frontend web rápido en Python.
+________________
+
+
+3. Roadmap de Implementación
+Fase 1: Configuración del Entorno Local
+Objetivo: Tener el "cerebro" corriendo en tu máquina sin internet.
+1. Instalación de Ollama:
+   * Descargar e instalar ollama.com.
+   * Ejecutar en terminal: ollama run llama3.2 (Esto descarga el modelo de ~2GB).
+2. Entorno Python:
+   * Crear entorno virtual: python -m venv venv.
+Instalar librerías clave:
+Bash
+pip install langchain langchain-community langchain-ollama chromadb sentence-transformers streamlit
+   * Fase 2: Preparación de Datos (Knowledge Base)
+Objetivo: Crear la "memoria" del sistema.
+1. Recopilación de Logs (Mock Data):
+   * Crear un archivo incidentes_historicos.csv.
+   * Columnas sugeridas: ID_Ticket, Error_Log, Causa_Raiz, Solucion_Aplicada.
+   * Nota: Para la demo, inventar 10-15 casos típicos (ej: "Connection Timeout Oracle", "NullPointer en AuthController").
+2. Limpieza: Asegurar que los logs de prueba no tengan caracteres extraños que rompan el lector de CSV.
+Fase 3: Ingesta y Vectorización
+Objetivo: Que la máquina "entienda" y archive los errores pasados.
+1. Script de Ingesta (ingest.py):
+   * Usar CSVLoader de LangChain para leer el archivo.
+   * Usar RecursiveCharacterTextSplitter para dividir la información.
+   * Inicializar HuggingFaceEmbeddings (modelo all-MiniLM-L6-v2).
+   * Guardar todo en Chroma (persistido en disco en carpeta ./chroma_db).
+Fase 4: Desarrollo del Core (RAG + Clasificador)
+Objetivo: Lógica de negocio.
+1. Script del Chatbot (app.py):
+   * Paso A (Retrieval): Configurar el retriever para buscar los 3 errores más parecidos al input del usuario en ChromaDB.
+   * Paso B (Prompting): Crear un Prompt Template que diga:
+"Actúa como experto DevOps. Analiza este error: {error}. Contexto histórico similar: {context}.
+   1. Clasifica la severidad (Alta/Media/Baja).
+   2. Explica la causa probable.
+   3. Sugiere la solución basada en el contexto."
+   * Paso C (Inferencia): Conectar con OllamaLLM para generar la respuesta.
+Fase 5: Interfaz de Usuario (UI)
+Objetivo: Visualización para la demo.
+   1. Interfaz Streamlit:
+   * Campo de texto grande: "Pegar Log del Error aquí".
+   * Botón: "Analizar Incidencia".
+   * Panel lateral: Configuración (ej: elegir modelo llama3.2 o mistral).
+   * Área de respuesta: Mostrar la clasificación y la solución formateada.
+________________
+
+
+4. Criterios de Éxito para la Demo
+   1. Privacidad: El sistema debe funcionar con el WiFi desconectado (una vez instaladas las librerías).
+   2. Precisión de Búsqueda: Al pegar un error similar a uno del CSV, el sistema debe mencionar el ticket histórico correcto.
+   3. Clasificación: Debe distinguir correctamente entre un error crítico (ej: "Database Down") y uno leve (ej: "Warning en logs").

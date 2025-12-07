@@ -1,0 +1,25 @@
+ticket_id,mensaje_error,causa_raiz,solucion_sugerida
+INC-1001,COBOL File Status 35 on MAIN_DAT,El archivo físico no existe en la ruta del mainframe especificada.,Verificar JCL de carga y asegurar que el dataset ha sido catalogado correctamente.
+INC-1002,NestJS: Cannot find module '@app/auth',Error en los alias del path en tsconfig.json tras actualización.,Revisar tsconfig.paths y borrar carpeta dist/ antes de recompilar.
+INC-1003,ORA-12541: TNS:no listener,El servicio de Oracle XE está detenido en el servidor local.,Reiniciar el servicio OracleServiceXE desde services.msc o ejecutar 'lsnrctl start' en la terminal.
+INC-1004,ORA-00001: unique constraint violated,Intento de insertar un ID de transacción duplicado.,Validar que el UUID se genere correctamente en el servicio antes del insert.
+INC-1005,MongoNetworkError: failed to connect to server,La instancia de MongoDB no acepta conexiones entrantes o credenciales incorrectas.,Revisar cadena de conexión en .env y asegurar que mongod service esté activo.
+INC-1006,ORA-00001: unique constraint violated,Intento de insertar un ID de transacción duplicado.,Validar que el UUID se genere correctamente en el servicio antes del insert.
+INC-1007,MongoNetworkError: failed to connect to server,La instancia de MongoDB no acepta conexiones entrantes o credenciales incorrectas.,Revisar cadena de conexión en .env y asegurar que mongod service esté activo.
+INC-1008,ORA-12541: TNS:no listener,El servicio de Oracle XE está detenido en el servidor local.,Reiniciar el servicio OracleServiceXE desde services.msc o ejecutar 'lsnrctl start' en la terminal.
+INC-1009,COBOL File Status 35 on MAIN_DAT,El archivo físico no existe en la ruta del mainframe especificada.,Verificar JCL de carga y asegurar que el dataset ha sido catalogado correctamente.
+INC-1010,COBOL File Status 35 on MAIN_DAT,El archivo físico no existe en la ruta del mainframe especificada.,Verificar JCL de carga y asegurar que el dataset ha sido catalogado correctamente.
+INC-1011,ORA-12541: TNS:no listener,El servicio de Oracle XE está detenido en el servidor local.,Reiniciar el servicio OracleServiceXE desde services.msc o ejecutar 'lsnrctl start' en la terminal.
+INC-1012,Connection refused at localhost:3000,El microservicio de NestJS no se ha iniciado o se cayó.,Verificar logs de PM2 o ejecutar 'npm run start:dev' en el directorio del proyecto backend.
+INC-1013,Connection refused at localhost:3000,El microservicio de NestJS no se ha iniciado o se cayó.,Verificar logs de PM2 o ejecutar 'npm run start:dev' en el directorio del proyecto backend.
+INC-1014,NestJS: Cannot find module '@app/auth',Error en los alias del path en tsconfig.json tras actualización.,Revisar tsconfig.paths y borrar carpeta dist/ antes de recompilar.
+INC-1015,Heap out of memory in Node.js,Fuga de memoria en el procesamiento de reporte masivo.,Aumentar memoria del proceso con --max-old-space-size=4096 o refactorizar el loop usando streams.
+INC-1016,MongoNetworkError: failed to connect to server,La instancia de MongoDB no acepta conexiones entrantes o credenciales incorrectas.,Revisar cadena de conexión en .env y asegurar que mongod service esté activo.
+INC-1017,Connection refused at localhost:3000,El microservicio de NestJS no se ha iniciado o se cayó.,Verificar logs de PM2 o ejecutar 'npm run start:dev' en el directorio del proyecto backend.
+INC-1018,ORA-12541: TNS:no listener,El servicio de Oracle XE está detenido en el servidor local.,Reiniciar el servicio OracleServiceXE desde services.msc o ejecutar 'lsnrctl start' en la terminal.
+INC-1019,Connection refused at localhost:3000,El microservicio de NestJS no se ha iniciado o se cayó.,Verificar logs de PM2 o ejecutar 'npm run start:dev' en el directorio del proyecto backend.
+INC-1020,Connection refused at localhost:3000,El microservicio de NestJS no se ha iniciado o se cayó.,Verificar logs de PM2 o ejecutar 'npm run start:dev' en el directorio del proyecto backend.
+INC-1021,ORA-12541: TNS:no listener,El servicio de Oracle XE está detenido en el servidor local.,Reiniciar el servicio OracleServiceXE desde services.msc o ejecutar 'lsnrctl start' en la terminal.
+INC-1022,ORA-00001: unique constraint violated,Intento de insertar un ID de transacción duplicado.,Validar que el UUID se genere correctamente en el servicio antes del insert.
+INC-1023,Heap out of memory in Node.js,Fuga de memoria en el procesamiento de reporte masivo.,Aumentar memoria del proceso con --max-old-space-size=4096 o refactorizar el loop usando streams.
+INC-1024,Heap out of memory in Node.js,Fuga de memoria en el procesamiento de reporte masivo.,Aumentar memoria del proceso con --max-old-space-size=4096 o refactorizar el loop usando streams.

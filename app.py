@@ -1,100 +1,142 @@
 import streamlit as st
 import os
+
+from langchain.chat_models import init_chat_model
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.output_parsers import StrOutputParser
 from langchain_chroma import Chroma
 from langchain_huggingface import HuggingFaceEmbeddings
-from langchain_ollama import OllamaLLM
-from langchain_core.prompts import ChatPromptTemplate
-# IMPORTACIONES MODERNAS (Compatibles con LangChain 0.3)
-from langchain.chains import create_retrieval_chain
-from langchain.chains.combine_documents import create_stuff_documents_chain
 
-# --- CONFIGURACIÓN ---
+# DATA LOCATION
 CARPETA_DATA = "./data"
 CHROMA_PATH = os.path.join(CARPETA_DATA, "chroma_db")
-MODELO_OLLAMA = "llama3.1" # Asegúrate de tener este modelo en Ollama
 
-# --- UI SETUP ---
-st.set_page_config(page_title="Soporte AI - Demo", page_icon="🛡️", layout="wide")
-st.title("🛡️ Asistente Inteligente SRE/DevOps")
+# MODEL AND PROVIDER
+MODEL_PROVIDER = "ollama"
+MODEL_NAME = "llama3.1"
 
-# --- CARGA DE RECURSOS ---
+# UI CONFIG
+st.set_page_config(page_title="Soporte AI - Pro", page_icon="🛡️", layout="wide")
+st.title("🛡️ Support ChatBot")
+
+# CARGA DE RECURSOS (Cached)
 @st.cache_resource
-def cargar_motor_ia():
-    # 1. Embeddings (Usamos el mismo modelo que en ingestar.py)
+def cargar_stack():
+    # Cargar Embeddings
     embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
     
-    # 2. Verificar DB
     if not os.path.exists(CHROMA_PATH):
-        st.error(f"No se encontró la base de datos en {CHROMA_PATH}. Ejecuta 'python ingestar.py' primero.")
         return None, None
-        
-    # 3. Conectar a ChromaDB
-    vector_store = Chroma(persist_directory=CHROMA_PATH, embedding_function=embeddings)
     
-    # 4. Conectar a Ollama
+    # Conexión a DB de vectores
+    vector_store = Chroma(
+        persist_directory=CHROMA_PATH, 
+        embedding_function=embeddings
+    )
+
+    # Inicializar Modelo 
     try:
-        llm = OllamaLLM(model=MODELO_OLLAMA)
+        # Mantenemos temperature=0.1 para precisión técnica
+        llm = init_chat_model(MODEL_NAME, model_provider=MODEL_PROVIDER, temperature=0.1)
     except Exception as e:
-        st.error(f"Error conectando a Ollama: {e}")
+        st.error(f"Error iniciando modelo: {e}")
         return None, None
 
     return vector_store, llm
 
-vector_store, llm = cargar_motor_ia()
+vector_store, llm = cargar_stack()
 
-if vector_store and llm:
-    # --- LÓGICA RAG (MODERNA) ---
-    
-    # 1. Prompt para el Chatbot
-    prompt = ChatPromptTemplate.from_template("""
-    Eres un experto en Soporte Técnico Bancario (SRE).
-    Usa el siguiente contexto de incidentes pasados para responder.
-    
-    <contexto>
-    {context}
-    </contexto>
-    
-    <error_actual>
-    {input}
-    </error_actual>
-    
-    Tu respuesta debe tener:
-    1. **Severidad estimada**
-    2. **Diagnóstico técnico**
-    3. **Pasos de solución sugeridos**
-    """)
-    
-    # 2. Cadena para procesar documentos (Stuff Chain)
-    document_chain = create_stuff_documents_chain(llm, prompt)
-    
-    # 3. Configurar el buscador (Retriever)
-    retriever = vector_store.as_retriever(search_kwargs={"k": 3})
-    
-    # 4. Cadena final de recuperación
-    retrieval_chain = create_retrieval_chain(retriever, document_chain)
+if not vector_store:
+    st.error("⚠️ Ejecuta 'python ingestar.py'")
+    st.stop()
 
-    # --- INTERFAZ VISUAL ---
-    col1, col2 = st.columns([1, 1])
-    
-    with col1:
-        st.subheader("📥 Reporte de Incidencia")
-        log_input = st.text_area("Pega aquí el log del error:", height=200, placeholder="Ej: ORA-12541: TNS:no listener...")
-        analizar_btn = st.button("🔍 Analizar Error", type="primary", use_container_width=True)
+# RAG CONFIG
+retriever = vector_store.as_retriever(search_kwargs={"k": 4}) 
 
-    with col2:
-        st.subheader("🤖 Diagnóstico IA")
-        if analizar_btn and log_input:
-            with st.spinner(f"Consultando a {MODELO_OLLAMA}..."):
-                try:
-                    # Ejecutar la cadena
-                    respuesta = retrieval_chain.invoke({"input": log_input})
-                    
-                    st.success("Análisis completado")
-                    st.markdown(respuesta["answer"])
-                    
-                    with st.expander("📚 Ver casos históricos similares usados"):
-                        for doc in respuesta["context"]:
-                            st.info(doc.page_content)
-                            
-                except Exception as e:
-                    st.error(f"Ocurrió un error: {e}")
+def format_docs(docs):
+    return "\n\n".join(f"- {d.page_content}" for d in docs)
+
+# PROMPT ROBUSTO (Mantenido intacto)
+template = """
+Eres un Ingeniero SRE Senior experto en análisis de incidentes.
+Tu tarea es ayudar al usuario usando la base de conocimientos proporcionada.
+
+<base_conocimientos>
+{context}
+</base_conocimientos>
+
+<consulta_usuario>
+{question}
+</consulta_usuario>
+
+INSTRUCCIONES DE RESPUESTA:
+
+1. SI EL USUARIO DA UN LOG EXACTO:
+   - Analiza la base de conocimientos.
+   - Da la solución precisa y directa.
+
+2. SI EL USUARIO DESCRIBE EL PROBLEMA EN LENGUAJE NATURAL (ej: "tengo timeout en oracle"):
+   - PRIMERO: Busca en la <base_conocimientos> errores que coincidan conceptualmente (ej: busca temas de Oracle o Timeouts).
+   - SEGUNDO: Dile al usuario algo como: "Para un diagnóstico preciso necesito el log completo, pero basándome en tu descripción, aquí tienes sugerencias de nuestra base histórica que podrían servir:".
+   - TERCERO: Lista las posibles causas y soluciones encontradas en el contexto que se parezcan al problema.
+
+3. SI NO HAY NADA RELACIONADO EN EL CONTEXTO:
+   - Pide amablemente el log del error.
+
+Tu tono debe ser técnico pero colaborativo.
+"""
+
+prompt = ChatPromptTemplate.from_template(template)
+
+# OPTIMIZACIÓN 1: Cadena de Generación Pura
+# Quitamos el retriever de aquí dentro. Le pasaremos el contexto manualmente.
+generation_chain = (
+    prompt
+    | llm
+    | StrOutputParser()
+)
+
+# UI LAYOUT
+col1, col2 = st.columns([1, 1])
+
+with col1:
+    st.subheader("🗣️ Cuéntame el problema")
+    user_input = st.text_area("Describe el error o pega el log:", height=200, placeholder="Ej: Tengo problemas de conexión con Oracle...")
+    btn = st.button("Consultar Base de Conocimientos", type="primary")
+
+with col2:
+    st.subheader("💡 Respuesta Sugerida")
+    
+    if btn and user_input:
+        # OPTIMIZACIÓN 2: Recuperación explícita antes de generar
+        with st.status("🔍 Buscando en registros históricos...", expanded=True) as status:
+            try:
+                # 1. Recuperamos documentos (Solo una vez)
+                docs = retriever.invoke(user_input)
+                
+                # 2. Formateamos el contexto
+                context_text = format_docs(docs)
+                
+                # 3. Mostramos las fuentes inmediatamente (Mejora UX)
+                status.update(label="✅ Contexto recuperado", state="complete", expanded=False)
+                
+                with st.expander("📚 Registros históricos consultados (Evidencia)"):
+                    if not docs:
+                        st.warning("No se encontraron registros similares.")
+                    for d in docs:
+                        st.info(d.page_content)
+
+                # 4. Generación con Streaming (Para que se vea escribir rápido)
+                st.markdown("### Diagnóstico:")
+                
+                # Preparamos el input exacto que pide el prompt
+                chain_input = {
+                    "context": context_text, 
+                    "question": user_input
+                }
+                
+                # Escribimos en tiempo real
+                st.write_stream(generation_chain.stream(chain_input))
+                
+            except Exception as e:
+                st.error(f"Error en el proceso: {e}")

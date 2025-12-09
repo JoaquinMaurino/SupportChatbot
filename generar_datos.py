@@ -26,4 +26,4 @@ with open(filename, mode='w', newline='', encoding='utf-8') as file:
         caso = random.choice(incidencias)
         writer.writerow([f"INC-{1000+i}", caso["error"], caso["causa"], caso["solucion"]])
 
-print(f"✅ Archivo '{filename}' generado exitosamente.")
+print(f"Archivo '{filename}' generado exitosamente.")

@@ -6,60 +6,109 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from langchain_chroma import Chroma
 from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_google_genai import GoogleGenerativeAIEmbeddings
 
-# DATA LOCATION
-CARPETA_DATA = "./data"
-CHROMA_PATH = os.path.join(CARPETA_DATA, "chroma_db")
+# --- PATHS ---
+DATA_DIR = "./data"
+PATH_LOCAL = os.path.join(DATA_DIR, "chroma_local")
+PATH_CLOUD = os.path.join(DATA_DIR, "chroma_cloud")
 
-# MODEL AND PROVIDER
-MODEL_PROVIDER = "ollama"
-MODEL_NAME = "llama3.1"
+# --- UI CONFIG ---
+st.set_page_config(page_title="Soporte AI - Híbrido Pro", page_icon="🔀", layout="wide")
+st.title("🔀 Asistente SRE (Arquitectura Multi-Modelo)")
 
-# UI CONFIG
-st.set_page_config(page_title="Soporte AI - Pro", page_icon="🛡️", layout="wide")
-st.title("🛡️ Support ChatBot")
+# --- SIDEBAR: CONFIGURACIÓN ---
+with st.sidebar:
+    st.header("⚙️ Configuración del Motor")
+    
+    # Selector de Modo
+    mode = st.radio("Modo de Ejecución:", ["Local (Privado)", "Nube (Google)"])
+    
+    api_key_val = None  # Variable para trackear la key
 
-# CARGA DE RECURSOS (Cached)
+    if mode == "Local (Privado)":
+        provider = "ollama"
+        model_name = "llama3.1"
+        db_path = PATH_LOCAL
+        embedding_type = "local"
+        st.success("🟢 Modo: Offline / Privado")
+        
+    else: # Modo Nube
+        provider = "google_genai"
+        model_name = "gemini-2.5-flash"
+        db_path = PATH_CLOUD
+        embedding_type = "cloud"
+        
+        # Input de API Key
+        api_key_val = st.text_input("Google API Key:", type="password")
+        if api_key_val:
+            os.environ["GOOGLE_API_KEY"] = api_key_val
+            st.success("🟢 Conectado a Google Cloud")
+        else:
+            if "GOOGLE_API_KEY" not in os.environ:
+                st.warning("⚠️ API Key requerida")
+                st.stop()
+
+# --- CARGA DE RECURSOS (CORREGIDO) ---
+
 @st.cache_resource
-def cargar_stack():
-    # Cargar Embeddings
-    embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
+def get_vector_store(path, type_embed, api_key_trigger):
+    """
+    IMPORTANTE: 'api_key_trigger' está aquí solo para forzar a Streamlit
+    a recargar esta función si la clave cambia.
+    """
+    if not os.path.exists(path):
+        return None
     
-    if not os.path.exists(CHROMA_PATH):
-        return None, None
-    
-    # Conexión a DB de vectores
-    vector_store = Chroma(
-        persist_directory=CHROMA_PATH, 
-        embedding_function=embeddings
-    )
-
-    # Inicializar Modelo 
     try:
-        # Mantenemos temperature=0.1 para precisión técnica
-        llm = init_chat_model(MODEL_NAME, model_provider=MODEL_PROVIDER, temperature=0.1)
+        if type_embed == "local":
+            embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
+        else:
+            # Si estamos en modo cloud, validamos la key real
+            if "GOOGLE_API_KEY" not in os.environ:
+                return None
+            embeddings = GoogleGenerativeAIEmbeddings(model="models/text-embedding-004")
+            
+        return Chroma(persist_directory=path, embedding_function=embeddings)
     except Exception as e:
-        st.error(f"Error iniciando modelo: {e}")
-        return None, None
+        return None
 
-    return vector_store, llm
+@st.cache_resource
+def get_llm(prov, mod, api_key_trigger):
+    try:
+        return init_chat_model(mod, model_provider=prov, temperature=0.1)
+    except Exception:
+        return None
 
-vector_store, llm = cargar_stack()
+# Inicialización (Pasamos la key para invalidar caché viejo)
+vector_store = get_vector_store(db_path, embedding_type, api_key_val)
+llm = get_llm(provider, model_name, api_key_val)
 
+# --- VALIDACIONES ---
 if not vector_store:
-    st.error("⚠️ Ejecuta 'python ingestar.py'")
+    # Mensaje de error más detallado
+    if mode == "Nube (Google)":
+        st.error(f"❌ Error accediendo a la base de datos Nube en: {db_path}")
+        st.info("Posibles causas:\n1. No ejecutaste 'python ingestar.py' CON la API Key puesta.\n2. La API Key actual es incorrecta.\n3. Intenta borrar caché (arriba a la derecha 'C' -> 'Clear Cache').")
+    else:
+        st.error(f"❌ No se encontró la base de datos Local en: {db_path}. Ejecuta 'python ingestar.py'.")
     st.stop()
 
-# RAG CONFIG
-retriever = vector_store.as_retriever(search_kwargs={"k": 4}) 
+if not llm:
+    st.error("⚠️ Error cargando el modelo. Verifica tus credenciales.")
+    st.stop()
+
+# --- RAG PIPELINE ---
+K_ARG = 4
+retriever = vector_store.as_retriever(search_kwargs={"k": K_ARG})
 
 def format_docs(docs):
     return "\n\n".join(f"- {d.page_content}" for d in docs)
 
-# PROMPT ROBUSTO (Mantenido intacto)
+# PROMPT INTELIGENTE (Sintaxis Memorizada)
 template = """
-Eres un Ingeniero SRE Senior experto en análisis de incidentes.
-Tu tarea es ayudar al usuario usando la base de conocimientos proporcionada.
+Eres un Asistente Técnico SRE (Site Reliability Engineer) amigable y profesional.
+Tu objetivo es ayudar a desarrolladores a resolver incidencias basándote en la base de conocimientos.
 
 <base_conocimientos>
 {context}
@@ -69,74 +118,50 @@ Tu tarea es ayudar al usuario usando la base de conocimientos proporcionada.
 {question}
 </consulta_usuario>
 
-INSTRUCCIONES DE RESPUESTA:
+INSTRUCCIONES DE COMPORTAMIENTO:
 
-1. SI EL USUARIO DA UN LOG EXACTO:
-   - Analiza la base de conocimientos.
-   - Da la solución precisa y directa.
+1. **CASO: SALUDO O DUDA GENERAL** (ej: "Hola", "¿Cómo funciona esto?", "Ayuda"):
+   - Saluda cordialmente.
+   - Explica brevemente: "Puedo ayudarte a diagnosticar errores. Por favor, describe el problema (ej: 'fallo en Oracle') o, para mayor precisión, pega el log completo del error aquí mismo."
+   - NO inventes soluciones si no hay un error técnico en la consulta.
 
-2. SI EL USUARIO DESCRIBE EL PROBLEMA EN LENGUAJE NATURAL (ej: "tengo timeout en oracle"):
-   - PRIMERO: Busca en la <base_conocimientos> errores que coincidan conceptualmente (ej: busca temas de Oracle o Timeouts).
-   - SEGUNDO: Dile al usuario algo como: "Para un diagnóstico preciso necesito el log completo, pero basándome en tu descripción, aquí tienes sugerencias de nuestra base histórica que podrían servir:".
-   - TERCERO: Lista las posibles causas y soluciones encontradas en el contexto que se parezcan al problema.
+2. **CASO: DESCRIPCIÓN VAGA** (ej: "tengo un error de node", "falla la base de datos"):
+   - Analiza la <base_conocimientos> buscando palabras clave relacionadas.
+   - Si encuentras coincidencias, responde: "Basándome en tu descripción, he encontrado casos similares en nuestra base histórica que podrían ser la causa:".
+   - Lista brevemente las causas y soluciones encontradas.
+   - **IMPORTANTE:** Termina diciendo: "⚠️ Esta es una sugerencia basada en similitud. Para un diagnóstico exacto, por favor copia y pega el mensaje de error completo."
 
-3. SI NO HAY NADA RELACIONADO EN EL CONTEXTO:
-   - Pide amablemente el log del error.
+3. **CASO: LOG DE ERROR EXACTO** (ej: "ORA-12541...", "Error: connection refused"):
+   - Usa el contexto para identificar la causa raíz y la solución.
+   - Responde de forma directa y concisa: "He identificado el error. Se trata de [Causa]. La solución recomendada es: [Solución]."
+   - Mantén un tono profesional y seguro.
 
-Tu tono debe ser técnico pero colaborativo.
+Recuerda: Si la información no está en la base de conocimientos, dilo honestamente y pide el log completo para intentar analizarlo mejor.
 """
-
 prompt = ChatPromptTemplate.from_template(template)
 
-# OPTIMIZACIÓN 1: Cadena de Generación Pura
-# Quitamos el retriever de aquí dentro. Le pasaremos el contexto manualmente.
-generation_chain = (
-    prompt
-    | llm
-    | StrOutputParser()
-)
+chain = prompt | llm | StrOutputParser()
 
-# UI LAYOUT
+# --- INTERFAZ ---
 col1, col2 = st.columns([1, 1])
 
 with col1:
-    st.subheader("🗣️ Cuéntame el problema")
-    user_input = st.text_area("Describe el error o pega el log:", height=200, placeholder="Ej: Tengo problemas de conexión con Oracle...")
-    btn = st.button("Consultar Base de Conocimientos", type="primary")
+    st.subheader("🗣️ Reporte")
+    user_input = st.text_area("Consulta:", height=200)
+    btn = st.button("Analizar")
 
 with col2:
-    st.subheader("💡 Respuesta Sugerida")
-    
+    st.subheader(f"💡 Diagnóstico ({mode})")
     if btn and user_input:
-        # OPTIMIZACIÓN 2: Recuperación explícita antes de generar
-        with st.status("🔍 Buscando en registros históricos...", expanded=True) as status:
-            try:
-                # 1. Recuperamos documentos (Solo una vez)
-                docs = retriever.invoke(user_input)
+        with st.status(f"Procesando con {model_name}...", expanded=True):
+            # 1. Recuperación
+            docs = retriever.invoke(user_input)
+            ctx = format_docs(docs)
+            st.write("✅ Contexto recuperado")
+            
+            with st.expander("Fuentes"):
+                for d in docs: st.info(d.page_content)
                 
-                # 2. Formateamos el contexto
-                context_text = format_docs(docs)
-                
-                # 3. Mostramos las fuentes inmediatamente (Mejora UX)
-                status.update(label="✅ Contexto recuperado", state="complete", expanded=False)
-                
-                with st.expander("📚 Registros históricos consultados (Evidencia)"):
-                    if not docs:
-                        st.warning("No se encontraron registros similares.")
-                    for d in docs:
-                        st.info(d.page_content)
-
-                # 4. Generación con Streaming (Para que se vea escribir rápido)
-                st.markdown("### Diagnóstico:")
-                
-                # Preparamos el input exacto que pide el prompt
-                chain_input = {
-                    "context": context_text, 
-                    "question": user_input
-                }
-                
-                # Escribimos en tiempo real
-                st.write_stream(generation_chain.stream(chain_input))
-                
-            except Exception as e:
-                st.error(f"Error en el proceso: {e}")
+            # 2. Generación
+            st.markdown("### Solución:")
+            st.write_stream(chain.stream({"context": ctx, "question": user_input}))

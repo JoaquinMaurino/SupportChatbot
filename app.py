@@ -1,129 +1,92 @@
-import streamlit as st
 import os
+import streamlit as st
 from dotenv import load_dotenv
 
 from langchain.chat_models import init_chat_model
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from langchain_chroma import Chroma
-from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 
+# --- ENV ---
 load_dotenv()
 
-# --- PATHS ---
+# --- CONSTANTES ---
 DATA_DIR = "./data"
-PATH_LOCAL = os.path.join(DATA_DIR, "chroma_local")
-PATH_CLOUD = os.path.join(DATA_DIR, "chroma_cloud")
+CHROMA_PATH = os.path.join(DATA_DIR, "chroma_gemini")
+MODEL_NAME = "gemini-2.5-flash"
+EMBEDDING_MODEL = "models/text-embedding-004"
+TOP_K = 4
 
 # --- UI CONFIG ---
-st.set_page_config(page_title="Soporte AI - Híbrido Pro", page_icon="🔀", layout="wide")
-st.title("🔀 Asistente SRE (Arquitectura Multi-Modelo)")
+st.set_page_config(
+    page_title="Supoort Chatbot RAG",
+    page_icon="🧠",
+    layout="wide"
+)
+st.title("🧠 Support Chatbot (Gemini + RAG)")
 
-# --- SIDEBAR: CONFIGURACIÓN ---
+# --- SIDEBAR ---
 with st.sidebar:
-    st.header("⚙️ Configuración del Motor")
+    st.header("⚙️ Configuración")
 
-    mode = st.radio("Modo de Ejecución:", ["Local (Privado)", "Nube (Google)"])
+    api_key = os.getenv("GOOGLE_API_KEY")
 
-    api_key_val = None
-
-    if mode == "Local (Privado)":
-        provider = "ollama"
-        model_name = "llama3.1"
-        db_path = PATH_LOCAL
-        embedding_type = "local"
-        st.success("🟢 Modo: Offline / Privado")
-
-    else:
-        provider = "google_genai"
-        model_name = "gemini-2.5-flash"
-        db_path = PATH_CLOUD
-        embedding_type = "cloud"
-
-        # 1) Intentar desde entorno (.env)
-        api_key_val = os.getenv("GOOGLE_API_KEY")
-
-        # 2) Fallback por UI
-        if not api_key_val:
-            api_key_input = st.text_input("Google API Key:", type="password")
-
-            if api_key_input:
-                api_key_val = api_key_input
-                st.success("🟢 Conectado a Google Cloud (input)")
-            else:
-                st.warning("⚠️ API Key requerida")
-                st.stop()
+    if not api_key:
+        api_key_input = st.text_input("Google API Key:", type="password")
+        if api_key_input:
+            api_key = api_key_input
+            st.success("🟢 Conectado a Google Cloud")
         else:
-            st.success("🟢 Conectado a Google Cloud (env)")
+            st.warning("⚠️ API Key requerida")
+            st.stop()
+    else:
+        st.success("🟢 Conectado a Google Cloud (.env)")
 
-# --- CARGA DE RECURSOS (CORREGIDO) ---
-
+# --- CARGA DE RECURSOS ---
 @st.cache_resource
-def get_vector_store(path, type_embed, api_key_trigger):
+def load_vector_store(path: str, api_key: str):
     if not os.path.exists(path):
-        return None
-
-    try:
-        if type_embed == "local":
-            embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
-        else:
-            if not api_key_trigger:
-                return None
-            embeddings = GoogleGenerativeAIEmbeddings(
-                model="models/text-embedding-004",
-                google_api_key=api_key_trigger
-            )
-
-        return Chroma(
-            persist_directory=path,
-            embedding_function=embeddings
+        raise RuntimeError(
+            "❌ Base vectorial no encontrada. Ejecuta `python ingestar.py`."
         )
-    except Exception:
-        return None
+
+    embeddings = GoogleGenerativeAIEmbeddings(
+        model=EMBEDDING_MODEL,
+        google_api_key=api_key
+    )
+
+    return Chroma(
+        persist_directory=path,
+        embedding_function=embeddings
+    )
 
 @st.cache_resource
-def get_llm(prov, mod, api_key_trigger):
-    if prov == "google_genai" and not api_key_trigger:
-        return None
+def load_llm(api_key: str):
+    return init_chat_model(
+        MODEL_NAME,
+        model_provider="google_genai",
+        temperature=0.1,
+        api_key=api_key
+    )
 
-    try:
-        return init_chat_model(
-            mod,
-            model_provider=prov,
-            temperature=0.1,
-            api_key=api_key_trigger
-        )
-    except Exception:
-        return None
-
-
-# Inicialización (Pasamos la key para invalidar caché viejo)
-vector_store = get_vector_store(db_path, embedding_type, api_key_val)
-llm = get_llm(provider, model_name, api_key_val)
-
-# --- VALIDACIONES ---
-if not vector_store:
-    # Mensaje de error más detallado
-    if mode == "Nube (Google)":
-        st.error(f"❌ Error accediendo a la base de datos Nube en: {db_path}")
-        st.info("Posibles causas:\n1. No ejecutaste 'python ingestar.py' CON la API Key puesta.\n2. La API Key actual es incorrecta.\n3. Intenta borrar caché (arriba a la derecha 'C' -> 'Clear Cache').")
-    else:
-        st.error(f"❌ No se encontró la base de datos Local en: {db_path}. Ejecuta 'python ingestar.py'.")
+# --- INIT MODELOS ---
+try:
+    vector_store = load_vector_store(CHROMA_PATH, api_key)
+    llm = load_llm(api_key)
+except Exception as e:
+    st.error(str(e))
     st.stop()
 
-if not llm:
-    st.error("⚠️ Error cargando el modelo. Verifica tus credenciales.")
-    st.stop()
-
-# --- RAG PIPELINE ---
-K_ARG = 4
-retriever = vector_store.as_retriever(search_kwargs={"k": K_ARG})
+# --- RAG ---
+retriever = vector_store.as_retriever(
+    search_kwargs={"k": TOP_K}
+)
 
 def format_docs(docs):
-    return "\n\n".join(f"- {d.page_content}" for d in docs)
+    return "\n\n".join(d.page_content for d in docs)
 
-# PROMPT INTELIGENTE (Sintaxis Memorizada)
+# --- PROMPT ---
 template = """
 Eres un Asistente Técnico SRE (Site Reliability Engineer) amigable y profesional.
 Tu objetivo es ayudar a desarrolladores a resolver incidencias basándote en la base de conocimientos.
@@ -160,26 +123,30 @@ prompt = ChatPromptTemplate.from_template(template)
 
 chain = prompt | llm | StrOutputParser()
 
-# --- INTERFAZ ---
+# --- UI ---
 col1, col2 = st.columns([1, 1])
 
 with col1:
     st.subheader("🗣️ Reporte")
     user_input = st.text_area("Consulta:", height=200)
-    btn = st.button("Analizar")
+    run = st.button("Analizar")
 
 with col2:
-    st.subheader(f"💡 Diagnóstico ({mode})")
-    if btn and user_input:
-        with st.status(f"Procesando con {model_name}...", expanded=True):
-            # 1. Recuperación
+    st.subheader("💡 Diagnóstico (Gemini)")
+    if run and user_input:
+        with st.status("Procesando...", expanded=True):
             docs = retriever.invoke(user_input)
-            ctx = format_docs(docs)
+            context = format_docs(docs)
+
             st.write("✅ Contexto recuperado")
-            
+
             with st.expander("Fuentes"):
-                for d in docs: st.info(d.page_content)
-                
-            # 2. Generación
+                for d in docs:
+                    st.info(d.page_content)
+
             st.markdown("### Solución:")
-            st.write_stream(chain.stream({"context": ctx, "question": user_input}))
+            st.write_stream(
+                chain.stream(
+                    {"context": context, "question": user_input}
+                )
+            )

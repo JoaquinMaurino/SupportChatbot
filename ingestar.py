@@ -1,52 +1,56 @@
 import os
-from dotenv import load_dotenv
 import shutil
+from dotenv import load_dotenv
+
 from langchain_community.document_loaders import CSVLoader
-from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_chroma import Chroma
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 
 # --- CONFIGURACIÓN ---
 load_dotenv()
+
 DATA_DIR = "./data"
 CSV_FILE = os.path.join(DATA_DIR, "base_conocimiento.csv")
-PATH_LOCAL = os.path.join(DATA_DIR, "chroma_local") # Base para Ollama
-PATH_CLOUD = os.path.join(DATA_DIR, "chroma_cloud") # Base para Gemini
+CHROMA_PATH = os.path.join(DATA_DIR, "chroma_gemini")
 
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 
+# --- VALIDACIONES ---
+if not GOOGLE_API_KEY:
+    raise RuntimeError("❌ GOOGLE_API_KEY no encontrada en el entorno (.env)")
+
+if not os.path.exists(CSV_FILE):
+    raise FileNotFoundError(f"❌ No existe el archivo: {CSV_FILE}")
+
+# --- CARGA DE DOCUMENTOS ---
 def load_docs():
-    if not os.path.exists(CSV_FILE):
-        print(f"❌ Error: No existe {CSV_FILE}")
-        return []
-    loader = CSVLoader(file_path=CSV_FILE, encoding="utf-8")
+    loader = CSVLoader(
+        file_path=CSV_FILE,
+        encoding="utf-8"
+    )
     return loader.load()
 
-def ingestar_local(docs):
-    print("\n🔵 [LOCAL] Generando vectores con HuggingFace (CPU)...")
-    if os.path.exists(PATH_LOCAL):
-        shutil.rmtree(PATH_LOCAL)
-    
-    embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
-    Chroma.from_documents(docs, embeddings, persist_directory=PATH_LOCAL)
-    print(f"✅ Base Local lista en: {PATH_LOCAL}")
+# --- INGESTA ---
+def ingest_gemini(docs):
+    print("🟠 Generando base vectorial con Gemini...")
 
-def ingestar_cloud(docs):
-    print("\n🟠 [CLOUD] Generando vectores con Google (Cloud)...")
-    if "GOOGLE_API_KEY" not in os.environ:
-        print("⚠️ Saltando Cloud: No se encontró GOOGLE_API_KEY.")
-        return
+    if os.path.exists(CHROMA_PATH):
+        shutil.rmtree(CHROMA_PATH)
 
-    if os.path.exists(PATH_CLOUD):
-        shutil.rmtree(PATH_CLOUD)
-    
-    # Usamos el modelo de embeddings de Google 
-    embeddings = GoogleGenerativeAIEmbeddings(model="models/text-embedding-004")
-    Chroma.from_documents(docs, embeddings, persist_directory=PATH_CLOUD)
-    print(f"✅ Base Cloud lista en: {PATH_CLOUD}")
+    embeddings = GoogleGenerativeAIEmbeddings(
+        model="models/text-embedding-004",
+        google_api_key=GOOGLE_API_KEY
+    )
 
+    Chroma.from_documents(
+        documents=docs,
+        embedding=embeddings,
+        persist_directory=CHROMA_PATH
+    )
+
+    print(f"✅ Base Gemini creada en: {CHROMA_PATH}")
+
+# --- MAIN ---
 if __name__ == "__main__":
-    documentos = load_docs()
-    if documentos:
-        ingestar_local(documentos) # Siempre se ejecuta
-        ingestar_cloud(documentos) # Solo si hay API Key
+    docs = load_docs()
+    ingest_gemini(docs)

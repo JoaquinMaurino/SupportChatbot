@@ -1,9 +1,12 @@
 import os
+from dotenv import load_dotenv
 import google.generativeai as genai
 
+load_dotenv() 
+
 # --- SETUP ---
-os.environ["GOOGLE_API_KEY"] = "AIzaSyDaJG3JxKdaxM3kpcbfvEtGoAvDgqCMKnM"
-genai.configure(api_key=os.environ["GOOGLE_API_KEY"])
+GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
+genai.configure(api_key=GOOGLE_API_KEY)
 
 print("🔍 Consultando modelos disponibles para tu API Key...")
 

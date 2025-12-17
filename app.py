@@ -1,5 +1,6 @@
 import streamlit as st
 import os
+from dotenv import load_dotenv
 
 from langchain.chat_models import init_chat_model
 from langchain_core.prompts import ChatPromptTemplate
@@ -7,6 +8,8 @@ from langchain_core.output_parsers import StrOutputParser
 from langchain_chroma import Chroma
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
+
+load_dotenv()
 
 # --- PATHS ---
 DATA_DIR = "./data"
@@ -20,11 +23,10 @@ st.title("🔀 Asistente SRE (Arquitectura Multi-Modelo)")
 # --- SIDEBAR: CONFIGURACIÓN ---
 with st.sidebar:
     st.header("⚙️ Configuración del Motor")
-    
-    # Selector de Modo
+
     mode = st.radio("Modo de Ejecución:", ["Local (Privado)", "Nube (Google)"])
-    
-    api_key_val = None  # Variable para trackear la key
+
+    api_key_val = None
 
     if mode == "Local (Privado)":
         provider = "ollama"
@@ -32,53 +34,69 @@ with st.sidebar:
         db_path = PATH_LOCAL
         embedding_type = "local"
         st.success("🟢 Modo: Offline / Privado")
-        
-    else: # Modo Nube
+
+    else:
         provider = "google_genai"
         model_name = "gemini-2.5-flash"
         db_path = PATH_CLOUD
         embedding_type = "cloud"
-        
-        # Input de API Key
-        api_key_val = st.text_input("Google API Key:", type="password")
-        if api_key_val:
-            os.environ["GOOGLE_API_KEY"] = api_key_val
-            st.success("🟢 Conectado a Google Cloud")
-        else:
-            if "GOOGLE_API_KEY" not in os.environ:
+
+        # 1) Intentar desde entorno (.env)
+        api_key_val = os.getenv("GOOGLE_API_KEY")
+
+        # 2) Fallback por UI
+        if not api_key_val:
+            api_key_input = st.text_input("Google API Key:", type="password")
+
+            if api_key_input:
+                api_key_val = api_key_input
+                st.success("🟢 Conectado a Google Cloud (input)")
+            else:
                 st.warning("⚠️ API Key requerida")
                 st.stop()
+        else:
+            st.success("🟢 Conectado a Google Cloud (env)")
 
 # --- CARGA DE RECURSOS (CORREGIDO) ---
 
 @st.cache_resource
 def get_vector_store(path, type_embed, api_key_trigger):
-    """
-    IMPORTANTE: 'api_key_trigger' está aquí solo para forzar a Streamlit
-    a recargar esta función si la clave cambia.
-    """
     if not os.path.exists(path):
         return None
-    
+
     try:
         if type_embed == "local":
             embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
         else:
-            # Si estamos en modo cloud, validamos la key real
-            if "GOOGLE_API_KEY" not in os.environ:
+            if not api_key_trigger:
                 return None
-            embeddings = GoogleGenerativeAIEmbeddings(model="models/text-embedding-004")
-            
-        return Chroma(persist_directory=path, embedding_function=embeddings)
-    except Exception as e:
+            embeddings = GoogleGenerativeAIEmbeddings(
+                model="models/text-embedding-004",
+                google_api_key=api_key_trigger
+            )
+
+        return Chroma(
+            persist_directory=path,
+            embedding_function=embeddings
+        )
+    except Exception:
         return None
 
 @st.cache_resource
 def get_llm(prov, mod, api_key_trigger):
+    if prov == "google_genai" and not api_key_trigger:
+        return None
+
     try:
-        return init_chat_model(mod, model_provider=prov, temperature=0.1)
+        return init_chat_model(
+            mod,
+            model_provider=prov,
+            temperature=0.1,
+            api_key=api_key_trigger
+        )
     except Exception:
         return None
+
 
 # Inicialización (Pasamos la key para invalidar caché viejo)
 vector_store = get_vector_store(db_path, embedding_type, api_key_val)

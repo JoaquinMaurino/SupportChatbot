@@ -1,4 +1,5 @@
 import os
+from dotenv import load_dotenv
 import shutil
 from langchain_community.document_loaders import CSVLoader
 from langchain_huggingface import HuggingFaceEmbeddings
@@ -6,12 +7,13 @@ from langchain_chroma import Chroma
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 
 # --- CONFIGURACIÓN ---
+load_dotenv()
 DATA_DIR = "./data"
 CSV_FILE = os.path.join(DATA_DIR, "base_conocimiento.csv")
 PATH_LOCAL = os.path.join(DATA_DIR, "chroma_local") # Base para Ollama
 PATH_CLOUD = os.path.join(DATA_DIR, "chroma_cloud") # Base para Gemini
 
-os.environ["GOOGLE_API_KEY"] = "AIzaSyDqqKm07HnPw-A5jyyjEYUVJIHAQkTtrBQ"
+GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 
 def load_docs():
     if not os.path.exists(CSV_FILE):

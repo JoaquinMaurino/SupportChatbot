@@ -145,8 +145,24 @@ with col2:
                     st.info(d.page_content)
 
             st.markdown("### Solución:")
-            st.write_stream(
-                chain.stream(
-                    {"context": context, "question": user_input}
+
+            try:
+                st.write_stream(
+                    chain.stream(
+                        {"context": context, "question": user_input}
+                    )
                 )
-            )
+            except Exception as e:
+                msg = str(e).lower()
+                if "overload" in msg or "overloaded" in msg or "503" in msg or "unavailable" in msg:
+                    st.error("El modelo está temporalmente sobrecargado. Intenta de nuevo en unos segundos.")
+                else:
+                    st.error("Error al generar la respuesta: " + str(e))
+
+                # Fallback sin streaming para mantener la funcionalidad
+                try:
+                    result = chain.run({"context": context, "question": user_input})
+                    st.write(result)
+                except Exception:
+                    st.warning("No se pudo obtener respuesta mediante fallback. Intenta más tarde.")
+
